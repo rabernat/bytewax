@@ -1,38 +1,30 @@
 import argparse
+import importlib
 import pathlib
+from typing import Any
 
 from bytewax.recovery import SqliteRecoveryConfig
 
-from .bytewax import spawn_cluster, cluster_main
+from .bytewax import cluster_main, spawn_cluster
 
-__all__ = [
-    "cluster_main"
-]
+__all__ = ["cluster_main"]
 
 
 def _parse_args():
     parser = argparse.ArgumentParser(
         prog="python -m bytewax.run", description="Run a bytewax dataflow"
     )
-    parser.add_argument("file_path", metavar="FILE_PATH", type=pathlib.Path)
-    run = parser.add_argument_group("Run options")
-    run.add_argument(
-        "-d",
-        "--dataflow-builder",
+    parser.add_argument(
+        "import_str",
         type=str,
-        default="get_flow",
-        help="Name of the function that returns the Dataflow.",
-    )
-    run.add_argument(
-        "--dataflow-args",
-        type=str,
-        nargs="*",
-        help="Args for the dataflow builder function.",
+        help="dataflow import string in the format "
+        "<module name>:<dataflow variable name>",
     )
     scaling = parser.add_argument_group(
         "Scaling",
-        "You should use either '-p/-w' to spawn multiple processes on this same machine,"
-        " or '-i/-a' to spawn a single process on different machines",
+        "You should use either '-p/-w' to spawn multiple processes "
+        "on this same machine, or '-i/-a' to spawn a single process "
+        "on different machines",
     )
     scaling.add_argument(
         "-p",
@@ -48,9 +40,7 @@ def _parse_args():
     )
     scaling.add_argument("-i", "--process-id", type=int, help="Process id")
     scaling.add_argument(
-        "-a", "--addresses",
-        action="append",
-        help="Addresses of other processes"
+        "-a", "--addresses", action="append", help="Addresses of other processes"
     )
 
     # Config options for recovery
@@ -75,8 +65,45 @@ def _parse_args():
     return args
 
 
+class ImportFromStringError(Exception):
+    pass
+
+
+def import_from_string(import_str: Any) -> Any:
+    if not isinstance(import_str, str):
+        return import_str
+
+    module_str, _, attrs_str = import_str.partition(":")
+    if not module_str or not attrs_str:
+        message = (
+            f"Import string '{import_str}' must be in format '<module>:<attribute>'."
+        )
+        raise ImportFromStringError(message.format(import_str=import_str))
+
+    try:
+        module = importlib.import_module(module_str)
+    except ImportError as exc:
+        if exc.name != module_str:
+            raise exc from None
+        message = 'Could not import module "{module_str}".'
+        raise ImportFromStringError(message.format(module_str=module_str))
+
+    instance = module
+    try:
+        for attr_str in attrs_str.split("."):
+            instance = getattr(instance, attr_str)
+    except AttributeError:
+        message = f"Attribute '{attrs_str}' not found in module '{module_str}'."
+        raise ImportFromStringError(
+            message.format(attrs_str=attrs_str, module_str=module_str)
+        )
+
+    return instance
+
+
 def _main():
     kwargs = vars(_parse_args())
+    kwargs["flow"] = import_from_string(kwargs.pop("import_str"))
     sqlite_directory = kwargs.pop("sqlite_directory")
     recovery_config = None
     if sqlite_directory:

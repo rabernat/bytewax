@@ -6,10 +6,10 @@ from datetime import timedelta
 import sseclient
 import urllib3
 
+from bytewax.connectors.stdio import StdOutput
 from bytewax.dataflow import Dataflow
 from bytewax.inputs import PartitionedInput, StatefulSource
-from bytewax.connectors.stdio import StdOutput
-from bytewax.window import SystemClockConfig, SessionWindow
+from bytewax.window import SessionWindow, SystemClockConfig
 
 
 class WikiSource(StatefulSource):
@@ -53,22 +53,20 @@ def keep_max(max_count, new_count):
     return new_max, new_max
 
 
-def get_flow():
-    flow = Dataflow()
-    flow.input("inp", WikiStreamInput())
-    # "event_json"
-    flow.map(json.loads)
-    # {"server_name": "server.name", ...}
-    flow.map(initial_count)
-    # ("server.name", 1)
-    flow.reduce_window(
-        "sum",
-        SystemClockConfig(),
-        SessionWindow(gap=timedelta(seconds=2)),
-        operator.add,
-    )
-    # ("server.name", sum_per_window)
-    flow.stateful_map("keep_max", lambda: 0, keep_max)
-    # ("server.name", max_per_window)
-    flow.output("out", StdOutput())
-    return flow
+flow = Dataflow()
+flow.input("inp", WikiStreamInput())
+# "event_json"
+flow.map(json.loads)
+# {"server_name": "server.name", ...}
+flow.map(initial_count)
+# ("server.name", 1)
+flow.reduce_window(
+    "sum",
+    SystemClockConfig(),
+    SessionWindow(gap=timedelta(seconds=2)),
+    operator.add,
+)
+# ("server.name", sum_per_window)
+flow.stateful_map("keep_max", lambda: 0, keep_max)
+# ("server.name", max_per_window)
+flow.output("out", StdOutput())

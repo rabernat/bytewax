@@ -1,11 +1,11 @@
+import datetime
 import re
 
-from bytewax import parse
 from bytewax.connectors.files import FileInput
+from bytewax.connectors.stdio import StdOutput
 from bytewax.dataflow import Dataflow
-from bytewax.execution import spawn_cluster
-from bytewax.outputs import StdOutputConfig
 from bytewax.recovery import SqliteRecoveryConfig
+from bytewax.run import cluster_main
 
 
 def lower(line):
@@ -17,8 +17,8 @@ def tokenize(line):
 
 
 def initial_count(word):
-    if word == "arrows":
-        raise RuntimeError("BOOM")
+    # if word == "arrows":
+    #     raise RuntimeError("BOOM")
     return word, 1
 
 
@@ -42,14 +42,16 @@ flow.map(initial_count)
 # ("word", 1)
 flow.stateful_map("running_count", count_builder, add)
 # ("word", running_count)
-flow.capture(StdOutputConfig())
+flow.output("out", StdOutput())
 
 
 recovery_config = SqliteRecoveryConfig(".")
 
 if __name__ == "__main__":
-    spawn_cluster(
+    cluster_main(
         flow,
+        [],
+        0,
         recovery_config=recovery_config,
-        **parse.cluster_args(),
+        epoch_interval=datetime.timedelta(seconds=0),
     )

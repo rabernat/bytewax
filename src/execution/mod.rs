@@ -44,10 +44,8 @@ use crate::window::clock::ClockBuilder;
 use crate::window::{StatefulWindowUnary, WindowBuilder};
 use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyString, PyTuple};
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
-use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use timely::communication::Allocate;
 use timely::dataflow::ProbeHandle;
@@ -447,44 +445,6 @@ impl PeriodicSpan {
     }
 }
 
-/// Get a Dataflow from a file_path.
-/// dataflow_builder is the accessor we use to get the dataflow object.
-/// It can represent either a variable or a callable.
-/// If it's a callable we call it with dataflow_args as arguments.
-/// The resulting object should be a Dataflow, or this will return a PyErr.
-fn get_flow(
-    py: Python,
-    file_path: &PathBuf,
-    dataflow_builder: &str,
-    dataflow_args: Vec<String>,
-) -> PyResult<Dataflow> {
-    let util = py.import("importlib.util")?;
-    let spec_from_file_location = util.getattr("spec_from_file_location")?;
-    let module_from_spec = util.getattr("module_from_spec")?;
-
-    let module_name = file_path
-        .file_stem()
-        // file_stem returns None if the path is a directory, we want a python file.
-        .ok_or_else(|| tracked_err::<PyRuntimeError>("the path passed has to be a python file"))?
-        .to_string_lossy();
-    let spec = spec_from_file_location.call((module_name, file_path), None)?;
-    let module = module_from_spec.call1((spec,))?;
-    spec.getattr("loader")?
-        .getattr("exec_module")
-        .reraise("error importing dataflow file")?
-        .call1((module,))?;
-    let dataflow_builder = PyString::new(py, dataflow_builder);
-    let builder = module.getattr(dataflow_builder)?;
-    if builder.is_callable() {
-        let tuple: &PyTuple = PyTuple::new(py, dataflow_args);
-        builder.call(tuple, None)?.extract::<Dataflow>()
-    } else {
-        Err(tracked_err::<PyRuntimeError>(
-            "the dataflow getter function is not a function",
-        ))
-    }
-}
-
 /// Check the __spec__ variable (https://docs.python.org/3/reference/import.html#spec__)
 /// If __spec__.name == "bytewax.run" it means the module was called from there.
 fn is_in_bytewax_run(py: Python) -> PyResult<bool> {
@@ -657,9 +617,7 @@ pub(crate) fn cluster_main(
 )]
 pub(crate) fn spawn_cluster(
     py: Python,
-    file_path: PathBuf,
-    dataflow_builder: String,
-    dataflow_args: Option<Vec<String>>,
+    flow: Py<Dataflow>,
     processes: Option<usize>,
     workers_per_process: Option<usize>,
     process_id: Option<usize>,
@@ -674,16 +632,6 @@ pub(crate) fn spawn_cluster(
         ));
     }
     let epoch_interval = epoch_interval.map(|dur| EpochInterval::new(Duration::from_secs_f64(dur)));
-
-    let flow = Py::new(
-        py,
-        get_flow(
-            py,
-            &file_path,
-            &dataflow_builder,
-            dataflow_args.unwrap_or(vec![]),
-        )?,
-    )?;
 
     if (processes.is_some() || workers_per_process.is_some())
         && (process_id.is_some() || addresses.is_some())
