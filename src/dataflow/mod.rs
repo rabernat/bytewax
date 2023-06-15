@@ -68,14 +68,24 @@ impl Dataflow {
     /// See `bytewax.connectors` for a buffet of our built-in
     /// connector types.
     ///
+    /// Input can be "batched" by supplying an optional `batch_size` param.
+    /// Batches are constructed by repeatedly calling `next` on the input
+    /// until the batch size is acheived or no input is returned.
+    ///
     /// Args:
     ///
     ///   step_id (str): Uniquely identifies this step for recovery.
     ///
     ///   input (bytewax.inputs.Input): Input definition.
-    #[pyo3(signature = (step_id, input))]
-    fn input(&mut self, step_id: StepId, input: Input) {
-        self.steps.push(Step::Input { step_id, input });
+    ///
+    ///   batch_size (int) = 1: Optional size of the batch of input to create.
+    #[pyo3(signature = (step_id, input, batch_size=1))]
+    fn input(&mut self, step_id: StepId, input: Input, batch_size: usize) {
+        self.steps.push(Step::Input {
+            step_id,
+            input,
+            batch_size,
+        });
     }
 
     /// Redistribute items randomly across all workers for the next step.
@@ -745,6 +755,7 @@ pub(crate) enum Step {
     Input {
         step_id: StepId,
         input: Input,
+        batch_size: usize,
     },
     Map {
         mapper: TdPyCallable,
@@ -815,6 +826,7 @@ impl<'source> FromPyObject<'source> for Step {
             "Input" => Ok(Self::Input {
                 step_id: pickle_extract(dict, "step_id")?,
                 input: pickle_extract(dict, "input")?,
+                batch_size: pickle_extract(dict, "batch_size")?,
             }),
             "Map" => Ok(Self::Map {
                 mapper: pickle_extract(dict, "mapper")?,
@@ -888,10 +900,15 @@ impl IntoPy<PyObject> for Step {
                 HashMap::from([("type", IntoPy::<PyObject>::into_py("Redistribute", py))])
                     .into_py(py)
             }
-            Self::Input { step_id, input } => HashMap::from([
+            Self::Input {
+                step_id,
+                input,
+                batch_size,
+            } => HashMap::from([
                 ("type", "Input".into_py(py)),
                 ("step_id", step_id.into_py(py)),
                 ("input", input.into_py(py)),
+                ("batch_size", batch_size.into_py(py)),
             ])
             .into_py(py),
             Self::Map { mapper } => {

@@ -380,7 +380,11 @@ where
                         .map(wrap_state_pair);
                     step_changes.push(changes);
                 }
-                Step::Input { step_id, input } => {
+                Step::Input {
+                    step_id,
+                    input,
+                    batch_size,
+                } => {
                     if let Ok(input) = input.extract::<PartitionedInput>(py) {
                         let step_resume_state = resume_state.remove(&step_id);
 
@@ -410,6 +414,7 @@ where
                                 epoch_interval.clone(),
                                 worker_index,
                                 worker_count,
+                                batch_size,
                                 &probe,
                                 resume_epoch,
                             )

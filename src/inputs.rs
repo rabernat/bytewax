@@ -13,6 +13,7 @@ use crate::worker::{WorkerCount, WorkerIndex};
 use pyo3::exceptions::{PyStopIteration, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::mem::take;
 use std::task::Poll;
 use std::time::{Duration, Instant};
 use timely::dataflow::operators::generic::builder_rc::OperatorBuilder;
@@ -409,6 +410,7 @@ impl DynamicInput {
         epoch_interval: EpochInterval,
         index: WorkerIndex,
         count: WorkerCount,
+        batch_size: usize,
         probe: &ProbeHandle<u64>,
         start_at: ResumeEpoch,
     ) -> PyResult<Stream<S, TdPyAny>>
@@ -446,20 +448,27 @@ impl DynamicInput {
                     let epoch = cap.time();
 
                     let mut eof = false;
+                    let mut current_batch = Vec::with_capacity(batch_size);
 
                     if !probe.less_than(epoch) {
-                        match unwrap_any!(
-                            Python::with_gil(|py| source.next(py)).reraise("error getting input")
-                        ) {
-                            Poll::Pending => {}
-                            Poll::Ready(None) => {
-                                eof = true;
+                        Python::with_gil(|py| {
+                            while current_batch.len() < batch_size {
+                                match unwrap_any!(source.next(py).reraise("error getting input")) {
+                                    Poll::Pending => {
+                                        break;
+                                    }
+                                    Poll::Ready(None) => {
+                                        eof = true;
+                                    }
+                                    Poll::Ready(Some(item)) => current_batch.push(item),
+                                }
                             }
-                            Poll::Ready(Some(item)) => {
-                                output_wrapper.activate().session(&cap).give(item);
-                                just_emitted = true;
-                            }
-                        }
+                        });
+                        output_wrapper
+                            .activate()
+                            .session(&cap)
+                            .give_vec(&mut take(&mut current_batch));
+                        just_emitted = true;
                     }
                     // Don't allow progress unless we've caught up,
                     // otherwise you can get cascading advancement and
