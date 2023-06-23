@@ -5,6 +5,7 @@ use axum::{
     routing::get,
     Router,
 };
+use prometheus::TextEncoder;
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
 use std::{net::SocketAddr, sync::Arc};
 
@@ -19,6 +20,7 @@ pub(crate) async fn run_webserver(dataflow_json: String) -> PyResult<()> {
 
     let app = Router::new()
         .route("/dataflow", get(get_dataflow))
+        .route("/metrics", get(get_metrics))
         .layer(Extension(shared_state));
 
     let port = std::env::var("BYTEWAX_DATAFLOW_API_PORT")
@@ -46,4 +48,11 @@ async fn get_dataflow(Extension(state): Extension<Arc<State>>) -> impl IntoRespo
         .header("content-type", "application/json")
         .body(state.dataflow_json.clone())
         .unwrap()
+}
+
+async fn get_metrics(Extension(_state): Extension<Arc<State>>) -> impl IntoResponse {
+    let families = prometheus::gather();
+    let encoder = TextEncoder::new();
+
+    encoder.encode_to_string(&families).unwrap()
 }

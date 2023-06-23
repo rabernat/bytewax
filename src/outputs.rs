@@ -10,6 +10,7 @@ use crate::recovery::operators::{FlowChangeStream, Route};
 use crate::timely::{EagerNotificator, InBuffer};
 use crate::unwrap_any;
 use crate::worker::{WorkerCount, WorkerIndex};
+use prometheus::register_int_counter;
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use std::collections::{BTreeSet, HashMap};
@@ -276,6 +277,8 @@ where
             vec![Antichain::from_elem(0), Antichain::from_elem(0)],
         );
 
+        let throughput = register_int_counter!("bytewax_throughput_total", "help").unwrap();
+
         let bundle_keys: Vec<StateKey> = bundle.parts.keys().cloned().collect();
         op_builder.build(move |init_caps| {
             let mut inbuf = InBuffer::new();
@@ -305,6 +308,7 @@ where
 
                                     sink.write(py, value.clone_ref(py))
                                         .reraise("error writing to output")?;
+                                    throughput.inc();
                                     output_session.give(wrap_state_pair((key, value)));
                                 }
                             }
@@ -431,6 +435,8 @@ where
         let output_stream = self.unary_frontier(Pipeline, &step_id.0, |_init_cap, _info| {
             let mut tmp_incoming: Vec<TdPyAny> = Vec::new();
 
+            let throughput = register_int_counter!("bytewax_throughput_total", "help").unwrap();
+
             move |input, output| {
                 sink = sink.take().and_then(|sink| {
                     input.for_each(|cap, incoming| {
@@ -443,6 +449,7 @@ where
                             for item in tmp_incoming.drain(..) {
                                 sink.write(py, item.clone_ref(py))
                                     .reraise("error writing to dynamic output")?;
+                                throughput.inc();
                                 output_session.give(item);
                             }
                             Ok(())
