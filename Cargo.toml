@@ -27,6 +27,7 @@ opentelemetry-otlp = { version = "0.11", features = ["trace", "reqwest-client", 
 tracing-opentelemetry = "0.18"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 fastrand = "1.9.0"
+lazy_static = { version = "1.4.0" }
 
 # For macos, use vendored gssapi
 [target.'cfg(target_os = "macos")'.dependencies]

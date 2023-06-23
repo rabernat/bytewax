@@ -8,13 +8,17 @@
 //! requires a `build` function that is used to build the telemetry layer.
 use std::collections::HashMap;
 
+use lazy_static::lazy_static;
 use opentelemetry::sdk::trace::Tracer;
-use pyo3::{
-    exceptions::{PyRuntimeError, PyTypeError},
-    prelude::*,
-};
+use prometheus::register_int_counter;
+use prometheus::IntCounter;
+use pyo3::exceptions::PyRuntimeError;
+use pyo3::exceptions::PyTypeError;
+use pyo3::prelude::*;
 use tracing::level_filters::LevelFilter;
-use tracing_subscriber::{filter::Targets, layer::SubscriberExt, Layer, Registry};
+use tracing_subscriber::filter::Targets;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::{Layer, Registry};
 
 pub(crate) mod jaeger_tracing;
 pub(crate) mod otlp_tracing;
@@ -178,4 +182,9 @@ pub(crate) fn register(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<OtlpTracingConfig>()?;
     m.add_class::<BytewaxTracer>()?;
     Ok(())
+}
+
+lazy_static! {
+    pub(crate) static ref THROUGHPUT_COUNTER: IntCounter =
+        register_int_counter!("throughput", "Number of items processed").unwrap();
 }

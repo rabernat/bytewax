@@ -265,6 +265,7 @@ dependencies = [
  "chrono",
  "fastrand",
  "futures",
+ "lazy_static",
  "num",
  "openssl-src",
  "opentelemetry",

@@ -8,6 +8,7 @@ use crate::pyo3_extensions::{extract_state_pair, wrap_state_pair, TdPyAny, TdPyC
 use crate::recovery::model::*;
 use crate::recovery::operators::{FlowChangeStream, Route};
 use crate::timely::{EagerNotificator, InBuffer};
+use crate::tracing::THROUGHPUT_COUNTER;
 use crate::unwrap_any;
 use crate::worker::{WorkerCount, WorkerIndex};
 use prometheus::register_int_counter;
@@ -277,7 +278,7 @@ where
             vec![Antichain::from_elem(0), Antichain::from_elem(0)],
         );
 
-        let throughput = register_int_counter!("bytewax_throughput_total", "help").unwrap();
+        let throughput = THROUGHPUT_COUNTER.with_opts();
 
         let bundle_keys: Vec<StateKey> = bundle.parts.keys().cloned().collect();
         op_builder.build(move |init_caps| {
@@ -435,7 +436,7 @@ where
         let output_stream = self.unary_frontier(Pipeline, &step_id.0, |_init_cap, _info| {
             let mut tmp_incoming: Vec<TdPyAny> = Vec::new();
 
-            let throughput = register_int_counter!("bytewax_throughput_total", "help").unwrap();
+            let throughput = THROUGHPUT_COUNTER.with_opts();
 
             move |input, output| {
                 sink = sink.take().and_then(|sink| {
