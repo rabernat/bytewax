@@ -142,8 +142,23 @@ impl Dataflow {
     ///       Uniquely identifies this step for recovery.
     ///   output (bytewax.outputs.Output):
     ///       Output definition.
-    fn output(&mut self, step_id: StepId, output: Output) {
-        self.steps.push(Step::Output { step_id, output });
+    ///   min_batch_size (int):
+    ///       minimum number of messages to receive before writing
+    ///       to the output (default = 1)
+    #[pyo3(signature = (step_id, output, min_batch_size = 1, timeout = None))]
+    fn output(
+        &mut self,
+        step_id: StepId,
+        output: Output,
+        min_batch_size: usize,
+        timeout: Option<chrono::Duration>,
+    ) {
+        self.steps.push(Step::Output {
+            step_id,
+            output,
+            min_batch_size,
+            timeout: timeout.unwrap_or_else(|| chrono::Duration::milliseconds(1)),
+        });
     }
 
     /// Filter selectively keeps only some items.
@@ -785,6 +800,8 @@ pub(crate) enum Step {
     Output {
         step_id: StepId,
         output: Output,
+        min_batch_size: usize,
+        timeout: chrono::Duration,
     },
 }
 
@@ -856,6 +873,8 @@ impl<'source> FromPyObject<'source> for Step {
             "Output" => Ok(Self::Output {
                 step_id: pickle_extract(dict, "step_id")?,
                 output: pickle_extract(dict, "output")?,
+                min_batch_size: pickle_extract(dict, "min_batch_size")?,
+                timeout: pickle_extract(dict, "timeout")?,
             }),
             &_ => Err(PyValueError::new_err(format!(
                 "bad python repr when unpickling Step: {dict:?}"
@@ -976,10 +995,17 @@ impl IntoPy<PyObject> for Step {
                 ("mapper", mapper.into_py(py)),
             ])
             .into_py(py),
-            Self::Output { step_id, output } => HashMap::from([
+            Self::Output {
+                step_id,
+                output,
+                min_batch_size,
+                timeout,
+            } => HashMap::from([
                 ("type", "Output".into_py(py)),
                 ("step_id", step_id.into_py(py)),
                 ("output", output.into_py(py)),
+                ("min_batch_size", min_batch_size.into_py(py)),
+                ("timeout", timeout.into_py(py)),
             ])
             .into_py(py),
         }
